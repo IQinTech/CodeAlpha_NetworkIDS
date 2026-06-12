@@ -1,0 +1,149 @@
+# ============================================================
+# CodeAlpha NIDS — Task 4: Custom Snort / Suricata Rules
+# File: codealpha.rules
+# ============================================================
+# Install path (Snort):    /etc/snort/rules/codealpha.rules
+# Install path (Suricata): /etc/suricata/rules/codealpha.rules
+# Add to snort.conf:       include $RULE_PATH/codealpha.rules
+# Add to suricata.yaml:    - codealpha.rules
+# ============================================================
+
+# ── PORT SCANS ───────────────────────────────────────────────
+
+# SYN scan (threshold: 15 ports in 2 seconds)
+alert tcp any any -> $HOME_NET any \
+    (msg:"CODEALPHA PORT SCAN - SYN Scan Detected"; \
+     flags:S,!A; \
+     threshold:type threshold, track by_src, count 15, seconds 2; \
+     classtype:attempted-recon; sid:1000001; rev:1;)
+
+# NULL scan (no TCP flags)
+alert tcp any any -> $HOME_NET any \
+    (msg:"CODEALPHA PORT SCAN - NULL Scan"; \
+     flags:0; \
+     classtype:attempted-recon; sid:1000002; rev:1;)
+
+# FIN scan (only FIN flag)
+alert tcp any any -> $HOME_NET any \
+    (msg:"CODEALPHA PORT SCAN - FIN Scan"; \
+     flags:F,!SARUPCE; \
+     classtype:attempted-recon; sid:1000003; rev:1;)
+
+# XMAS scan (FIN + PSH + URG)
+alert tcp any any -> $HOME_NET any \
+    (msg:"CODEALPHA PORT SCAN - XMAS Scan"; \
+     flags:FPU; \
+     classtype:attempted-recon; sid:1000004; rev:1;)
+
+# ── BRUTE FORCE ──────────────────────────────────────────────
+
+# SSH brute force (20 connections in 10 seconds)
+alert tcp any any -> $HOME_NET 22 \
+    (msg:"CODEALPHA BRUTE FORCE - SSH"; \
+     flags:S; \
+     threshold:type threshold, track by_src, count 20, seconds 10; \
+     classtype:attempted-admin; sid:1000010; rev:1;)
+
+# FTP brute force
+alert tcp any any -> $HOME_NET 21 \
+    (msg:"CODEALPHA BRUTE FORCE - FTP"; \
+     flags:S; \
+     threshold:type threshold, track by_src, count 20, seconds 10; \
+     classtype:attempted-admin; sid:1000011; rev:1;)
+
+# Telnet brute force
+alert tcp any any -> $HOME_NET 23 \
+    (msg:"CODEALPHA BRUTE FORCE - Telnet"; \
+     flags:S; \
+     threshold:type threshold, track by_src, count 20, seconds 10; \
+     classtype:attempted-admin; sid:1000012; rev:1;)
+
+# RDP brute force
+alert tcp any any -> $HOME_NET 3389 \
+    (msg:"CODEALPHA BRUTE FORCE - RDP"; \
+     flags:S; \
+     threshold:type threshold, track by_src, count 10, seconds 10; \
+     classtype:attempted-admin; sid:1000013; rev:1;)
+
+# ── WEB ATTACKS ──────────────────────────────────────────────
+
+# SQL Injection attempt
+alert tcp any any -> $HTTP_SERVERS $HTTP_PORTS \
+    (msg:"CODEALPHA WEB - SQL Injection Attempt"; \
+     flow:to_server,established; \
+     content:"UNION"; nocase; \
+     content:"SELECT"; nocase; distance:0; \
+     classtype:web-application-attack; sid:1000020; rev:1;)
+
+# XSS attempt
+alert tcp any any -> $HTTP_SERVERS $HTTP_PORTS \
+    (msg:"CODEALPHA WEB - XSS Attempt"; \
+     flow:to_server,established; \
+     content:"<script"; nocase; \
+     classtype:web-application-attack; sid:1000021; rev:1;)
+
+# Path traversal
+alert tcp any any -> $HTTP_SERVERS $HTTP_PORTS \
+    (msg:"CODEALPHA WEB - Path Traversal Attempt"; \
+     flow:to_server,established; \
+     content:"../"; \
+     classtype:web-application-attack; sid:1000022; rev:1;)
+
+# Command injection
+alert tcp any any -> $HTTP_SERVERS $HTTP_PORTS \
+    (msg:"CODEALPHA WEB - Command Injection Attempt"; \
+     flow:to_server,established; \
+     pcre:"/(\||;|`|\$\()\s*(ls|cat|id|whoami|uname|ping|wget|curl)/i"; \
+     classtype:web-application-attack; sid:1000023; rev:1;)
+
+# ── ICMP ATTACKS ─────────────────────────────────────────────
+
+# ICMP flood (100 pings in 5 seconds)
+alert icmp any any -> $HOME_NET any \
+    (msg:"CODEALPHA DoS - ICMP Flood"; \
+     itype:8; \
+     threshold:type threshold, track by_src, count 100, seconds 5; \
+     classtype:attempted-dos; sid:1000030; rev:1;)
+
+# ICMP ping sweep
+alert icmp any any -> $HOME_NET any \
+    (msg:"CODEALPHA RECON - ICMP Ping Sweep"; \
+     itype:8; \
+     threshold:type both, track by_src, count 30, seconds 5; \
+     classtype:attempted-recon; sid:1000031; rev:1;)
+
+# ── DNS ATTACKS ──────────────────────────────────────────────
+
+# DNS exfiltration (long subdomain query)
+alert udp any any -> any 53 \
+    (msg:"CODEALPHA DNS - Possible Exfiltration (long query)"; \
+     content:"|00 01 00 00|"; offset:4; depth:4; \
+     dsize:>100; \
+     classtype:policy-violation; sid:1000040; rev:1;)
+
+# DNS amplification attack
+alert udp any any -> any 53 \
+    (msg:"CODEALPHA DNS - Amplification Attempt (ANY query)"; \
+     content:"|00 ff|"; \
+     classtype:attempted-dos; sid:1000041; rev:1;)
+
+# ── MALWARE / C2 ─────────────────────────────────────────────
+
+# Metasploit Meterpreter default port
+alert tcp any any -> $HOME_NET 4444 \
+    (msg:"CODEALPHA C2 - Possible Meterpreter/Reverse Shell on 4444"; \
+     flags:S; \
+     classtype:trojan-activity; sid:1000050; rev:1;)
+
+# Netcat reverse shell
+alert tcp any any -> $HOME_NET any \
+    (msg:"CODEALPHA C2 - Netcat Shell Signature"; \
+     content:"/bin/sh"; \
+     classtype:trojan-activity; sid:1000051; rev:1;)
+
+# PowerShell download cradle
+alert tcp any any -> $HOME_NET any \
+    (msg:"CODEALPHA MALWARE - PowerShell Download Cradle"; \
+     content:"IEX"; \
+     content:"DownloadString"; distance:0; nocase; \
+     classtype:trojan-activity; sid:1000052; rev:1;)
